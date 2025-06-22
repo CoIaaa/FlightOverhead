@@ -1,0 +1,10 @@
+<<<<<<< HEAD
+requests>=2.25.1
+plyer>=2.0.0
+Pillow>=9.0.0
+=======
+requests>=2.25.1
+plyer>=2.0.0
+Pillow>=9.0.0
+>>>>>>> eb3ab8304665a2eaf899ac0988e15ce17239d09e
+win10toast 
