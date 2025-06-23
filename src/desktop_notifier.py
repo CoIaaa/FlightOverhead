@@ -10,7 +10,7 @@ import platform
 import contextlib
 
 # Add this block for pync fallback on macOS 
-if platform.system() == "Darwin": 
+if platform.system() == "Darwin":
     try:
         import pync
     except ImportError:
