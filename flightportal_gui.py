@@ -5,7 +5,7 @@ import webbrowser
 import tkinter as tk
 import requests
 
-ctk.set_appearance_mode("System")
+ctk.set_appearance_mode("Light")
 ctk.set_default_color_theme("green")
 
 class App(ctk.CTk):
@@ -106,6 +106,23 @@ class App(ctk.CTk):
         save_btn = ctk.CTkButton(card, text="Save", command=self.on_location_next, **sign_btn_style)
         save_btn.grid(row=row, column=0, columnspan=2, pady=(0, 20), padx=(24,24), sticky="ew")
 
+    def show_preferences_page(self):
+        self.configure(fg_color="#eaf1fb")
+        for widget in self.winfo_children():
+            widget.destroy()
+        if not hasattr(self, 'preferences_page') or self.preferences_page is None:
+            self.preferences_page = PreferencesPage(self, self.on_preferences_save, self.on_preferences_back)
+        self.preferences_page.grid(row=0, column=0, rowspan=2, columnspan=2, sticky="nsew")
+
+    def on_preferences_save(self):
+        # Placeholder for save logic
+        print("Preferences saved!")
+        # You can add navigation to the next page here
+
+    def on_preferences_back(self):
+        self.preferences_page.grid_forget()
+        self.show_location_page()
+
     def on_next(self, client_id, client_secret, token=None):
         print(f"OpenSky Client ID: {client_id}")
         print(f"OpenSky Client Secret: {client_secret}")
@@ -126,6 +143,7 @@ class App(ctk.CTk):
             return
         self.coord_error.configure(text="")
         print(f"Location set: Latitude {lat}, Longitude {lon}")
+        self.show_preferences_page()
 
 class WelcomeFrame(ctk.CTkFrame):
     def __init__(self, master, start_callback):
@@ -325,6 +343,96 @@ class InformationFrame(ctk.CTkFrame):
         clickable.bind("<Button-1>", go_to_login)
         clickable.bind("<Enter>", lambda e: clickable.configure(text_color="#222266"))
         clickable.bind("<Leave>", lambda e: clickable.configure(text_color="#64748b"))
+
+class PreferencesPage(ctk.CTkFrame):
+    def __init__(self, master, on_save, on_back, **kwargs):
+        super().__init__(master, **kwargs)
+        self.configure(bg_color="#eaf1fb")
+
+        # Title
+        BOX_WIDTH = 260
+        self.title = ctk.CTkLabel(self, text="PREFERENCES", font=("Arial Black", 32))
+        self.title.grid(row=0, column=0, columnspan=2, pady=(30, 10), padx=20, sticky="w")
+        self.grid_rowconfigure(1, minsize=10)  # Spacer row
+        notif_frame = ctk.CTkFrame(self, fg_color="#dbeafe", width=BOX_WIDTH)
+        unit_frame = ctk.CTkFrame(self, fg_color="#dbeafe", width=BOX_WIDTH)
+        type_frame = ctk.CTkFrame(self, fg_color="#dbeafe", width=BOX_WIDTH)
+        alt_frame = ctk.CTkFrame(self, fg_color="#dbeafe", width=BOX_WIDTH)
+        notif_frame.grid(row=2, column=0, padx=20, pady=10, sticky="nsew")
+        unit_frame.grid(row=2, column=1, padx=20, pady=10, sticky="nsew")
+        type_frame.grid(row=3, column=0, padx=20, pady=10, sticky="nsew")
+        alt_frame.grid(row=3, column=1, padx=20, pady=10, sticky="nsew")
+        self.grid_columnconfigure(0, minsize=BOX_WIDTH, weight=1, uniform="col")
+        self.grid_columnconfigure(1, minsize=BOX_WIDTH, weight=1, uniform="col")
+
+        # Notification Radius
+        notif_label = ctk.CTkLabel(notif_frame, text="Notification Radius (KM)", font=("Arial", 16))
+        notif_label.pack(pady=(10, 0), fill="x", expand=True)
+        self.notif_slider = ctk.CTkSlider(notif_frame, from_=0, to=2, number_of_steps=2)
+        self.notif_slider.set(1)  # Default to 2km (middle)
+        self.notif_slider.pack(padx=20, pady=(10, 0), fill="x", expand=True)
+        # Label row for 1, 2, 5 under the slider (precisely aligned)
+        label_row = ctk.CTkFrame(notif_frame, fg_color="transparent", height=20)
+        label_row.pack(fill="x", padx=20, pady=(0, 10), expand=True)
+        label_row.pack_propagate(False)
+        label_1 = ctk.CTkLabel(label_row, text="1", font=("Arial", 12))
+        label_2 = ctk.CTkLabel(label_row, text="2", font=("Arial", 12))
+        label_5 = ctk.CTkLabel(label_row, text="5", font=("Arial", 12))
+        label_1.place(x=0, y=0)
+        label_2.place(x=0, y=0)
+        label_5.place(x=0, y=0)
+        def place_labels(event=None):
+            slider_width = label_row.winfo_width()
+            handle_offset = 14  # Adjust for your slider's handle size
+            label_1.place(x=handle_offset, y=0)
+            label_2.place(x=(slider_width // 2) - (label_2.winfo_reqwidth() // 2), y=0)
+            label_5.place(x=slider_width - handle_offset - label_5.winfo_reqwidth(), y=0)
+        label_row.bind("<Configure>", place_labels)
+        notif_frame.after(100, place_labels)
+
+        # Unit Selection
+        unit_label = ctk.CTkLabel(unit_frame, text="Unit Selection", font=("Arial", 16))
+        unit_label.grid(row=0, column=0, columnspan=2, pady=(10, 0), padx=10, sticky="ew")
+        # Altitude Unit
+        alt_unit_label = ctk.CTkLabel(unit_frame, text="Altitude Unit", font=("Arial", 12))
+        alt_unit_label.grid(row=1, column=0, padx=(20,10), pady=(10, 0), sticky="w")
+        alt_unit_dropdown = ctk.CTkOptionMenu(unit_frame, values=["ft", "m"])
+        alt_unit_dropdown.grid(row=2, column=0, padx=(20,10), pady=(0, 10), sticky="ew")
+        # Speed Unit
+        speed_unit_label = ctk.CTkLabel(unit_frame, text="Speed Unit", font=("Arial", 12))
+        speed_unit_label.grid(row=1, column=1, padx=(10,20), pady=(10, 0), sticky="w")
+        speed_unit_dropdown = ctk.CTkOptionMenu(unit_frame, values=["kt", "km/h", "mph"])
+        speed_unit_dropdown.grid(row=2, column=1, padx=(10,20), pady=(0, 10), sticky="ew")
+        unit_frame.grid_columnconfigure(0, weight=1, uniform="unit")
+        unit_frame.grid_columnconfigure(1, weight=1, uniform="unit")
+
+        # Flight Type
+        type_label = ctk.CTkLabel(type_frame, text="Flight Type", font=("Arial", 16))
+        type_dropdown = ctk.CTkOptionMenu(type_frame, values=["All", "Commercial", "Private", "Military"])
+        type_label.pack(pady=(10, 0), fill="x", expand=True)
+        type_dropdown.pack(padx=20, pady=10, fill="x", expand=True)
+
+        # Altitude Filter
+        alt_label = ctk.CTkLabel(alt_frame, text="Altitude Filter (ft)", font=("Arial", 16))
+        alt_entry = ctk.CTkEntry(alt_frame, placeholder_text="e.g. 10000")
+        alt_label.pack(pady=(10, 0), fill="x", expand=True)
+        alt_entry.pack(padx=20, pady=10, fill="x", expand=True)
+
+        # Flight Info Box
+        info_label = ctk.CTkLabel(self, text="Flight Info", font=("Arial", 14))
+        info_label.grid(row=4, column=0, padx=20, pady=(20, 0), sticky="w")
+        info_box = ctk.CTkTextbox(self, width=350, height=80, state="disabled")
+        info_box.grid(row=5, column=0, columnspan=2, padx=20, pady=(0, 10), sticky="ew")
+
+        # Save and Back Buttons
+        save_btn = ctk.CTkButton(self, text="SAVE", fg_color="#0033ff", font=("Arial Black", 18), width=120, command=on_save)
+        save_btn.grid(row=6, column=1, padx=20, pady=20, sticky="e")
+        back_btn = ctk.CTkButton(self, text="Back", fg_color="#cccccc", font=("Arial", 14), width=80, command=on_back)
+        back_btn.grid(row=6, column=0, padx=20, pady=20, sticky="w")
+
+        # Configure grid weights
+        self.grid_rowconfigure(5, weight=1)
+        self.grid_columnconfigure((0, 1), weight=1)
 
 if __name__ == "__main__":
     app = App()
