@@ -5,8 +5,8 @@ import webbrowser
 import tkinter as tk
 import requests
 
-ctk.set_appearance_mode("System")  # Modes: "System", "Dark", "Light"
-ctk.set_default_color_theme("green")  # Use green for the button
+ctk.set_appearance_mode("System")
+ctk.set_default_color_theme("green")
 
 class App(ctk.CTk):
     def __init__(self):
@@ -22,19 +22,31 @@ class App(ctk.CTk):
                 print(f"Could not set window icon: {e}")
         else:
             print(f"Icon file not found: {icon_path}")
-        # Set the main window background to OpenSky's background color
-        self.configure(fg_color="#f4f8fb")
+            self.configure(fg_color="#f4f8fb")
 
-        # Center the card using grid
         self.grid_rowconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
         self.grid_columnconfigure(0, weight=1)
         self.grid_columnconfigure(1, weight=1)
 
-        self.welcome_frame = WelcomeFrame(self, self.show_login)
+        self.welcome_frame = WelcomeFrame(self, self.show_information)
+        self.information_frame = InformationFrame(self, self.on_signup_clicked)
         self.login_frame = LoginFrame(self, self.on_next)
 
         self.welcome_frame.grid(row=0, column=0, rowspan=2, columnspan=2, sticky="nsew")
+
+    def show_information(self):
+        self.welcome_frame.grid_forget()
+        self.information_frame.grid(row=0, column=0, rowspan=2, columnspan=2, sticky="nsew")
+        self.grid_rowconfigure(0, weight=1)
+        self.grid_columnconfigure(0, weight=1)
+
+    def on_signup_clicked(self):
+        webbrowser.open_new_tab("https://opensky-network.org/")
+        self.information_frame.grid_forget()
+        self.login_frame.grid(row=0, column=0, rowspan=2, columnspan=2, sticky="nsew")
+        self.grid_rowconfigure(0, weight=1)
+        self.grid_columnconfigure(0, weight=1)
 
     def show_login(self):
         self.welcome_frame.grid_forget()
@@ -48,10 +60,8 @@ class App(ctk.CTk):
 
     def show_location_page(self):
         self.configure(fg_color="#dbeafe")
-        # Destroy or hide the login card
         for widget in self.winfo_children():
             widget.destroy()
-        # Main card (no shadow, match login card style)
         card = ctk.CTkFrame(self, fg_color="#ffffff", corner_radius=18, width=340)
         card.place(relx=0.5, rely=0.5, anchor="c")
         card.grid_columnconfigure(0, weight=1)
@@ -60,9 +70,7 @@ class App(ctk.CTk):
         title.grid(row=row, column=0, pady=(28, 8), padx=32, sticky="ew"); row += 1
         subtitle = ctk.CTkLabel(card, text="Enter your coordinates to receive flight notifications for your area.", font=("Arial", 12), text_color="#555")
         subtitle.grid(row=row, column=0, pady=(0, 18), padx=32, sticky="ew"); row += 1
-        # Latitude
         def validate_coord_input(new_value):
-            # Allow empty, digits, one dot, and one leading minus
             if new_value == "":
                 return True
             import re
@@ -76,7 +84,6 @@ class App(ctk.CTk):
         lat_frame.grid_propagate(False)
         lat_entry = ctk.CTkEntry(lat_frame, textvariable=self.lat_var, placeholder_text="e.g. 37.7749", font=("Arial", 14), fg_color="transparent", border_width=0, text_color="#222831", validate="key", validatecommand=vcmd)
         lat_entry.pack(fill="both", expand=True, padx=8, pady=2)
-        # Longitude
         lon_label = ctk.CTkLabel(card, text="Longitude (e.g. -122.4194)", font=("Arial", 12), text_color="#222831", anchor="w")
         lon_label.grid(row=row, column=0, pady=(0, 0), padx=32, sticky="w"); row += 1
         self.lon_var = tk.StringVar()
@@ -85,10 +92,8 @@ class App(ctk.CTk):
         lon_frame.grid_propagate(False)
         lon_entry = ctk.CTkEntry(lon_frame, textvariable=self.lon_var, placeholder_text="e.g. -122.4194", font=("Arial", 14), fg_color="transparent", border_width=0, text_color="#222831", validate="key", validatecommand=vcmd)
         lon_entry.pack(fill="both", expand=True, padx=8, pady=2)
-        # Error label
         self.coord_error = ctk.CTkLabel(card, text="", text_color="#e74c3c", font=("Arial", 13, "bold"), anchor="center", justify="center")
         self.coord_error.grid(row=row, column=0, padx=32, pady=(0, 8), sticky="ew"); row += 1
-        # Save button (styled like Sign in)
         sign_btn_style = {
             'width': 240,
             'height': 38,
@@ -121,7 +126,6 @@ class App(ctk.CTk):
             return
         self.coord_error.configure(text="")
         print(f"Location set: Latitude {lat}, Longitude {lon}")
-        # Proceed to next step (e.g., notification settings)
 
 class WelcomeFrame(ctk.CTkFrame):
     def __init__(self, master, start_callback):
@@ -130,29 +134,28 @@ class WelcomeFrame(ctk.CTkFrame):
         self.grid_rowconfigure((0,1,2,3,4,5,6), weight=1)
         self.grid_columnconfigure(0, weight=1)
 
-        # Load and display the welcome image
         assets_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'assets')
         img_path = os.path.join(assets_dir, 'welcome.png')
         img = Image.open(img_path)
-        img = img.transpose(Image.FLIP_LEFT_RIGHT)  # Flip horizontally
-        img.thumbnail((180, 180), Image.LANCZOS)  # Maintain aspect ratio
+        img = img.transpose(Image.FLIP_LEFT_RIGHT)
+        img.thumbnail((180, 180), Image.LANCZOS)
         self.welcome_img = ImageTk.PhotoImage(img)
         img_label = ctk.CTkLabel(self, image=self.welcome_img, text="")
         img_label.grid(row=1, column=0, pady=(30, 0), sticky="nsew")
 
-        # Welcome headline
+        
         welcome_label = ctk.CTkLabel(self, text="Welcome to Flights Overhead!", font=("Arial", 28, "bold"), text_color="#222831")
         welcome_label.grid(row=2, column=0, pady=(10, 0), sticky="n")
         subtitle = ctk.CTkLabel(self, text="Click below to get started!", font=("Arial", 16), text_color="#555")
         subtitle.grid(row=3, column=0, pady=(5, 0), padx=20, sticky="n")
-        # Down arrow image
+        
         down_arrow_path = os.path.join(assets_dir, 'down_arrow.png')
         arrow_img = Image.open(down_arrow_path)
         arrow_img.thumbnail((80, 80), Image.LANCZOS)
         self.arrow_img = ImageTk.PhotoImage(arrow_img)
         arrow_label = ctk.CTkLabel(self, image=self.arrow_img, text="")
         arrow_label.grid(row=4, column=0, pady=(10, 0), padx=0, sticky="nsew")
-        # Green Get Started button
+
         start_btn = ctk.CTkButton(self, text="Get Started", command=start_callback, width=220, height=48, font=("Arial", 18, "bold"), fg_color="#22c55e", hover_color="#16a34a")
         start_btn.grid(row=5, column=0, pady=(20, 40), sticky="n")
 
@@ -161,19 +164,17 @@ class LoginFrame(ctk.CTkFrame):
         super().__init__(master, *args, **kwargs)
         self.on_next_callback = on_next_callback
         self.configure(fg_color="#dbeafe")
-        # Use a 3x3 grid for perfect centering
         for i in range(3):
             self.grid_rowconfigure(i, weight=1)
             self.grid_columnconfigure(i, weight=1)
 
-        # Load eye icons
         assets_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'assets')
         eye_img_path = os.path.join(assets_dir, 'eye.png')
         eye_slash_img_path = os.path.join(assets_dir, 'eye_slash.png')
         self.eye_icon = ctk.CTkImage(light_image=Image.open(eye_img_path), dark_image=Image.open(eye_img_path), size=(24, 24))
         self.eye_slash_icon = ctk.CTkImage(light_image=Image.open(eye_slash_img_path), dark_image=Image.open(eye_slash_img_path), size=(24, 24))
 
-        # Centered card frame (fixed size, perfectly centered)
+        
         card = ctk.CTkFrame(self, fg_color="white", corner_radius=18, width=340, height=410)
         card.grid(row=1, column=1, padx=0, pady=0)
         card.grid_propagate(False)
@@ -181,13 +182,11 @@ class LoginFrame(ctk.CTkFrame):
         card.grid_columnconfigure(0, weight=1)
         card.grid_columnconfigure(1, weight=1)
 
-        # Title and subtitle (left-aligned)
         title = ctk.CTkLabel(card, text="Connect to OpenSky", font=("Arial", 20, "bold"), text_color="#222831", anchor="w", justify="left")
         title.grid(row=0, column=0, columnspan=2, pady=(24, 0), padx=(24,0), sticky="w")
         subtitle = ctk.CTkLabel(card, text="Please enter your details", font=("Arial", 13), text_color="#555", anchor="w", justify="left")
         subtitle.grid(row=1, column=0, columnspan=2, pady=(2, 12), padx=(24,0), sticky="w")
 
-        # Email label and entry (left-aligned, styled)
         email_label_frame = ctk.CTkFrame(card, fg_color="transparent")
         email_label_frame.grid(row=2, column=0, columnspan=2, pady=(0, 0), padx=(24,0), sticky="w")
         email_label = ctk.CTkLabel(email_label_frame, text="Client ID", font=("Arial", 12), text_color="#222831", anchor="w", justify="left")
@@ -198,12 +197,10 @@ class LoginFrame(ctk.CTkFrame):
         email_frame.grid_propagate(False)
         user_entry = ctk.CTkEntry(email_frame, textvariable=self.username_var, width=220, height=44, font=("Arial", 14), placeholder_text="E-mail", border_width=0, fg_color="transparent", text_color="#222831")
         user_entry.pack(fill="both", expand=True, padx=8, pady=2)
-        # Email error message (placeholder)
         email_error = ctk.CTkLabel(card, text="Please enter a valid email address.", font=("Arial", 10), text_color="#ef4444")
         email_error.grid(row=4, column=0, columnspan=2, pady=(2, 8), padx=(24,0), sticky="w")
-        email_error.grid_remove()  # Hide by default
+        email_error.grid_remove()
 
-        # Password label and entry (left-aligned, styled)
         pass_label = ctk.CTkLabel(card, text="Client Secret", font=("Arial", 12), text_color="#222831", anchor="w", justify="left")
         pass_label.grid(row=5, column=0, columnspan=2, pady=(0, 0), padx=(24,0), sticky="w")
         self.password_var = ctk.StringVar()
@@ -218,46 +215,13 @@ class LoginFrame(ctk.CTkFrame):
         show_btn = ctk.CTkButton(pass_frame_outer, image=self.eye_icon, text="", width=48, height=24, command=self.toggle_password, fg_color="#e5e7eb", hover_color="#cbd5e1")
         show_btn.grid(row=0, column=1, padx=(6,8), pady=2, sticky="e")
         self.show_btn = show_btn
-        # Password error message (placeholder)
         pass_error = ctk.CTkLabel(card, text="Your password must contain only numbers", font=("Arial", 10), text_color="#ef4444")
         pass_error.grid(row=7, column=0, columnspan=2, pady=(2, 8), padx=(24,0), sticky="w")
-        pass_error.grid_remove()  # Hide by default
+        pass_error.grid_remove()
 
-        # Add Guide.png icon at the bottom left of the card
-        guide_img_path = os.path.join(assets_dir, 'Guide.png')
-        self.guide_icon = ctk.CTkImage(light_image=Image.open(guide_img_path), dark_image=Image.open(guide_img_path), size=(28, 28))
-        guide_icon_label = ctk.CTkLabel(card, image=self.guide_icon, text="", cursor="hand2")
-        guide_icon_label.place(relx=0.0, rely=1.0, anchor="sw", x=12, y=-12)
-        # Create a text bubble frame for the tooltip (closer to icon, no white square)
-        self.info_bubble = ctk.CTkFrame(card, fg_color="#e6f7ff", border_color="#e6f7ff", border_width=0, corner_radius=22)
-        self.info_bubble.place(relx=0.0, rely=1.0, anchor="sw", x=38, y=-8)
-        self.info_bubble.lower()  # Hide by default
-        self.info_label = ctk.CTkLabel(
-            self.info_bubble,
-            text="1. Log in to your OpenSky account at opensky-network.org\n2. Go to your user page\n3. Click 'Create API' to generate your Client ID and Client Secret",
-            font=("Arial", 10),
-            text_color="#555",
-            justify="left",
-            wraplength=180,
-            fg_color="#e6f7ff"
-        )
-        self.info_label.pack(padx=16, pady=(14, 18))
-        def show_info(event):
-            self.info_bubble.lift()
-        def hide_info(event):
-            self.info_bubble.lower()
-        guide_icon_label.bind("<Enter>", show_info)
-        guide_icon_label.bind("<Leave>", hide_info)
-
-        # Sign up to OpenSky button (styled like Sign in, above it)
-        signup_btn = ctk.CTkButton(card, text="Sign up to OpenSky", width=240, height=38, font=("Arial", 15, "bold"), fg_color="#000040", text_color="#ffffff", hover_color="#222266", corner_radius=8, command=self.open_opensky_signup)
-        signup_btn.grid(row=8, column=0, columnspan=2, pady=(24, 12), padx=(24,24), sticky="ew")
-
-        # Login error message
         self.login_error = ctk.CTkLabel(card, text="", text_color="#e74c3c", font=("Arial", 12, "bold"), anchor="center", justify="center")
         self.login_error.grid(row=10, column=0, columnspan=2, padx=32, pady=(0, 8), sticky="ew")
 
-        # Sign in button (full width, cyan, bold black text)
         sign_btn_style = {
             'width': 240,
             'height': 38,
@@ -267,9 +231,21 @@ class LoginFrame(ctk.CTkFrame):
             'hover_color': "#222266",
             'corner_radius': 8
         }
-        login_btn = ctk.CTkButton(card, text="Continue", command=self.try_login, **sign_btn_style)
-        login_btn.grid(row=9, column=0, columnspan=2, pady=(0, 16), padx=(24,24), sticky="ew")
+        login_btn = ctk.CTkButton(card, text="Connect", command=self.try_login, **sign_btn_style)
+        login_btn.grid(row=9, column=0, columnspan=2, pady=(16, 16), padx=(24,24), sticky="ew")
         self.login_btn = login_btn
+
+        def go_to_opensky(event=None):
+            webbrowser.open_new_tab("https://opensky-network.org/")
+        container = ctk.CTkFrame(card, fg_color="transparent")
+        container.grid(row=10, column=0, columnspan=2, pady=(0, 12), padx=(24,24), sticky="ew")
+        no_account_label = ctk.CTkLabel(container, text="Don't have an account? ", font=("Arial", 12), text_color="#555", anchor="e", justify="right", fg_color="transparent")
+        no_account_label.pack(side="left")
+        opensky_link = ctk.CTkLabel(container, text="Click to go to OpenSky", font=("Segoe UI", 12, "underline"), text_color="#0000ee", cursor="hand2", fg_color="transparent")
+        opensky_link.pack(side="left")
+        opensky_link.bind("<Button-1>", go_to_opensky)
+        opensky_link.bind("<Enter>", lambda e: opensky_link.configure(text_color="#222266"))
+        opensky_link.bind("<Leave>", lambda e: opensky_link.configure(text_color="#0000ee"))
 
     def toggle_password(self):
         self.show_password = not self.show_password
@@ -317,6 +293,38 @@ class LoginFrame(ctk.CTkFrame):
         except Exception as e:
             self.login_error.configure(text="Could not connect to OpenSky OAuth2.", text_color="#e74c3c")
             self.login_btn.configure(state="normal")
+
+class InformationFrame(ctk.CTkFrame):
+    def __init__(self, master, on_signup_callback):
+        super().__init__(master)
+        self.configure(fg_color="#dbeafe")
+        self.grid_rowconfigure((0,1,2,3,4), weight=1)
+        self.grid_columnconfigure(0, weight=1)
+
+        info_label = ctk.CTkLabel(self, text="OpenSky Account Required", font=("Arial", 24, "bold"), text_color="#222831")
+        info_label.grid(row=1, column=0, pady=(40, 10), padx=20, sticky="n")
+        info_text = (
+            "To use Flights Overhead, you need an OpenSky account.\n"
+            "You will need to sign up and create an API application to get your Client ID and Secret.\n\n"
+            "Click below to sign up at OpenSky and then come back to enter the details."
+        )
+        info_message = ctk.CTkLabel(self, text=info_text, font=("Arial", 15), text_color="#555", wraplength=420, justify="center")
+        info_message.grid(row=2, column=0, pady=(0, 10), padx=32, sticky="n")
+        signup_btn = ctk.CTkButton(self, text="Sign up", width=220, height=48, font=("Arial", 18, "bold"), fg_color="#000040", text_color="#ffffff", hover_color="#222266", command=on_signup_callback)
+        signup_btn.grid(row=3, column=0, pady=(10, 10), sticky="n")
+        signup_btn.bind("<Enter>", lambda e: signup_btn.configure(fg_color="#222266"))
+        signup_btn.bind("<Leave>", lambda e: signup_btn.configure(fg_color="#000040"))
+        def go_to_login(event=None):
+            master.show_login()
+        container = ctk.CTkFrame(self, fg_color="transparent")
+        container.grid(row=4, column=0, sticky="n", pady=(0, 40))
+        already_label = ctk.CTkLabel(container, text="Already have an account? ", font=("Arial", 13, "bold"), text_color="#64748b", anchor="e", justify="right", fg_color="transparent")
+        already_label.pack(side="left")
+        clickable = ctk.CTkLabel(container, text="Click to login", font=("Segoe UI", 13, "underline"), text_color="#000040", cursor="hand2", fg_color="transparent")
+        clickable.pack(side="left")
+        clickable.bind("<Button-1>", go_to_login)
+        clickable.bind("<Enter>", lambda e: clickable.configure(text_color="#222266"))
+        clickable.bind("<Leave>", lambda e: clickable.configure(text_color="#64748b"))
 
 if __name__ == "__main__":
     app = App()
