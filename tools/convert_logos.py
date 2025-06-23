@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 from PIL import Image
 import os
 
@@ -50,18 +49,7 @@ def convert_png_to_ico():
     print("--------------------------")
 
 if __name__ == "__main__":
-=======
-from PIL import Image
-import os
-
-# Get the absolute path of the project's root directory
-# This is one level up from the current script's location (tools/convert_logos.py)
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-# --- Configuration ---
-# Folder where your .png logos are located
-logos_folder = os.path.join(BASE_DIR, 'logos')
-# --- End Configuration ---
+    convert_png_to_ico() 
 
 def convert_png_to_ico():
     """
@@ -102,5 +90,4 @@ def convert_png_to_ico():
     print("--------------------------")
 
 if __name__ == "__main__":
->>>>>>> eb3ab8304665a2eaf899ac0988e15ce17239d09e
     convert_png_to_ico() 
