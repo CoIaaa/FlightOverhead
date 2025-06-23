@@ -1,4 +1,4 @@
-# ✈️ Flight Portal Desktop Notifier
+# ✈️ Flight Overhead Desktop Notifier
 
 A Python application that monitors the sky above you for air traffic and sends you a desktop notification when a flight is directly overhead. It can even show the airline's logo in the notification!
 
