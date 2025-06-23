@@ -350,7 +350,7 @@ def main():
             return
     
     # Get coordinates
-    lat, lon = get_manual_coordinates()
+    lat, lon = get_manual_coordinates() 
     
     # Ask user for radius
     print()
