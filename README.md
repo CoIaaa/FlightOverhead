@@ -17,23 +17,21 @@ First, install all the necessary Python libraries. Open a terminal or command pr
 pip install -r requirements.txt
 ```
 
-### Step 2: Set Your Precise Location
+### Step 2: Start the GUI Application
 
-This is the most important step! To make the notifier monitor the area above *you* (instead of the default London), you need to set your location.
-
-Run the setup script from your terminal:
+To launch the Flights Overhead GUI, run:
 ```bash
-python tools/get_precise_location.py
+python src/main.py
 ```
-The script will guide you through getting your GPS coordinates and will create a `config.py` file for you.
+This will open a modern desktop app where you can log in, set your preferences, and manage your location.
 
-### Step 3: Run the Notifier
+### Step 3: (Optional) Run the Notifier
 
-You're all set! To start monitoring for flights, run the main application:
+If you want to run the background notifier (for desktop notifications), you can still use:
 ```bash
 python src/desktop_notifier.py
 ```
-Now, just leave the script running in the background. It will check for flights every 15 seconds and send a notification when one is detected overhead.
+But most users will use the GUI (`src/main.py`) for all setup and interaction.
 
 ---
 
@@ -61,6 +59,6 @@ If you want to create a standalone executable file that you can run without need
 2.  **Build the `.exe`:**
     Run this command from the main project folder. It includes the necessary assets.
     ```bash
-    pyinstaller --onefile --windowed --add-data "assets;assets" --add-data "logos;logos" --icon "assets/fo.ico" src/desktop_notifier.py
+    pyinstaller --onefile --windowed --add-data "assets;assets" --add-data "logos;logos" --icon "assets/fo.ico" src/main.py
     ```
     Your final `FlightPortal.exe` (or similar) will be inside the `dist` folder.
