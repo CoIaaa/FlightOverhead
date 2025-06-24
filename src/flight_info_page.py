@@ -41,7 +41,16 @@ class FlightInfoPage(ctk.CTkFrame):
             self.on_edit_prefs()
     def add_flight(self, flight):
         self.flight_list.configure(state="normal")
-        msg = f"Callsign: {flight.get('callsign', 'Unknown')}\nCountry: {flight.get('origin_country', 'Unknown')}\nAltitude: {flight.get('altitude', 'Unknown')}\nICAO24: {flight.get('icao24', 'Unknown')}\n{'-'*32}\n"
+        livery = flight.get('livery', None)
+        msg = (
+            f"Callsign: {flight.get('callsign', 'Unknown')}\n"
+            f"Route: {flight.get('origin', '???')} → {flight.get('destination', '???')}\n"
+            f"Altitude: {flight.get('altitude', '???')} ft | Speed: {flight.get('speed', '???')} kt\n"
+            f"Aircraft: {flight.get('aircraft_type', '???')} - {flight.get('aircraft_model', '???')}\n"
+        )
+        if livery:
+            msg += f"Livery: {livery}\n"
+        msg += "--------------------------------\n"
         self.flight_list.insert("end", msg)
         self.flight_list.see("end")
         self.flight_list.configure(state="disabled")

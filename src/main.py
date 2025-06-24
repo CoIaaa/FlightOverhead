@@ -5,19 +5,172 @@ import threading
 import time
 import requests
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from plyer import notification
 from welcome_page import WelcomeFrame
 from login_page import LoginFrame
 from preferences_page import PreferencesPage
 from information_page import InformationFrame
 from flight_info_page import FlightInfoPage
+import math
+from winotify import Notification, audio
+import sys
+import platform
 
 ctk.set_appearance_mode("Light")
 ctk.set_default_color_theme("green")
 
+# --- FR24 and OpenSky constants and helpers ---
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ASSETS_DIR = os.path.join(BASE_DIR, 'assets')
+LOGOS_DIR = os.path.join(BASE_DIR, 'logos')
+FLIGHT_SEARCH_HEAD = "https://data-cloud.flightradar24.com/zones/fcgi/feed.js?bounds="
+FLIGHT_SEARCH_TAIL = "&faa=1&satellite=1&mlat=1&flarm=1&adsb=1&gnd=0&air=1&vehicles=0&estimated=0&maxage=14400&gliders=0&stats=0&ems=1&limit=3"
+BOUNDS_BOX = "51.6,51.4,-0.3,-0.1"  # Default, can be customized
+FLIGHT_SEARCH_URL = FLIGHT_SEARCH_HEAD + BOUNDS_BOX + FLIGHT_SEARCH_TAIL
+FLIGHT_LONG_DETAILS_HEAD = "https://data-live.flightradar24.com/clickhandler/?flight="
+OPENSKY_URL = "https://opensky-network.org/api/states/all?icao24="
+OSKY_TOKEN_URL = "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token"
+rheaders = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:106.0) Gecko/20100101 Firefox/106.0",
+    "cache-control": "no-store, no-cache, must-revalidate, post-check=0, pre-check=0",
+    "accept": "application/json"
+}
+_osky_token_cache = {
+    1: {"token": None, "expires": datetime.min},
+    2: {"token": None, "expires": datetime.min},
+}
+def get_opensky_token(client_id, client_secret, which=1):
+    now = datetime.now(timezone.utc)
+    cache = _osky_token_cache[which]
+    if cache["token"] and now < cache["expires"]:
+        return cache["token"]
+    data = {
+        "grant_type": "client_credentials",
+        "client_id": client_id,
+        "client_secret": client_secret
+    }
+    try:
+        resp = requests.post(OSKY_TOKEN_URL, data=data)
+        resp.raise_for_status()
+        token = resp.json()["access_token"]
+        expires_in = resp.json().get("expires_in", 1800)
+        cache["token"] = token
+        cache["expires"] = now + timedelta(seconds=expires_in - 300)
+        return token
+    except Exception as e:
+        print(f"[OpenSky] Failed to get OAuth2 token (client {which}): {e}")
+        return None
+
+def get_opensky_state(icao24, client_id, client_secret, client_id2=None, client_secret2=None):
+    if not icao24:
+        return None
+    url = OPENSKY_URL + icao24.lower()
+    token1 = get_opensky_token(client_id, client_secret, which=1)
+    headers1 = {"Authorization": f"Bearer {token1}"} if token1 else {}
+    try:
+        response = requests.get(url, timeout=5, headers=headers1)
+        if response.status_code == 429 or response.status_code == 401:
+            if client_id2 and client_secret2:
+                token2 = get_opensky_token(client_id2, client_secret2, which=2)
+                headers2 = {"Authorization": f"Bearer {token2}"} if token2 else {}
+                try:
+                    response2 = requests.get(url, timeout=5, headers=headers2)
+                    if response2.status_code == 429 or response2.status_code == 401:
+                        pass
+                    else:
+                        response2.raise_for_status()
+                        data2 = response2.json()
+                        if data2 and data2.get("states"):
+                            state2 = data2["states"][0]
+                            altitude_m2 = state2[7]
+                            speed_ms2 = state2[9]
+                            if altitude_m2 is not None and speed_ms2 is not None:
+                                return {"altitude_m": altitude_m2, "speed_ms": speed_ms2}
+                except Exception:
+                    pass
+        else:
+            response.raise_for_status()
+            data = response.json()
+            if data and data.get("states"):
+                state = data["states"][0]
+                altitude_m = state[7]
+                speed_ms = state[9]
+                if altitude_m is not None and speed_ms is not None:
+                    return {"altitude_m": altitude_m, "speed_ms": speed_ms}
+    except Exception:
+        pass
+    return None
+
+def get_flight_details(flight_id):
+    try:
+        url = FLIGHT_LONG_DETAILS_HEAD + flight_id
+        response = requests.get(url, headers=rheaders, timeout=10)
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        print(f"Error fetching flight details: {e}")
+        return None
+
+def parse_flight_details(flight_data, icao24=None, client_id=None, client_secret=None, client_id2=None, client_secret2=None):
+    try:
+        flight_number = flight_data.get("identification", {}).get("number", {}).get("default", "")
+        flight_callsign = flight_data.get("identification", {}).get("callsign", "")
+        aircraft_code = flight_data.get("aircraft", {}).get("model", {}).get("code", "")
+        aircraft_model = flight_data.get("aircraft", {}).get("model", {}).get("text", "")
+        airline_name = flight_data.get("airline", {}).get("name", "")
+        airline_icao = flight_data.get("airline", {}).get("code", {}).get("icao", "")
+        origin = flight_data.get("airport", {}).get("origin", {})
+        destination = flight_data.get("airport", {}).get("destination", {})
+        origin_code = origin.get("code", {}).get("iata", "")
+        dest_code = destination.get("code", {}).get("iata", "")
+        livery = flight_data.get("aircraft", {}).get("livery", {}).get("name", None)
+        flight_id_val = flight_number if flight_number else flight_callsign
+        altitude_ft = None
+        speed_kts = None
+        opensky_data = get_opensky_state(icao24, client_id, client_secret, client_id2, client_secret2)
+        if opensky_data:
+            alt_m = opensky_data.get("altitude_m")
+            spd_ms = opensky_data.get("speed_ms")
+            if alt_m is not None:
+                altitude_ft = int(alt_m * 3.28084)
+            if spd_ms is not None:
+                speed_kts = int(spd_ms * 1.94384)
+        if altitude_ft is None:
+            trail = flight_data.get("trail", [])
+            if trail and len(trail) > 0:
+                for entry in reversed(trail):
+                    altitude_m = entry.get("alt")
+                    speed_kmh = entry.get("spd")
+                    if altitude_m not in (None, 0) and speed_kmh not in (None, 0):
+                        altitude_ft = int(altitude_m * 3.28084)
+                        speed_kts = int(speed_kmh * 0.539957)
+                        break
+        return {
+            "flight_id": flight_id_val,
+            "callsign": flight_callsign,
+            "airline": airline_name,
+            "airline_icao": airline_icao,
+            "origin": origin_code,
+            "destination": dest_code,
+            "aircraft_type": aircraft_code,
+            "aircraft_model": aircraft_model,
+            "altitude": altitude_ft,
+            "speed": speed_kts,
+            "icao24": icao24,
+            "livery": livery
+        }
+    except Exception as e:
+        print(f"Error parsing flight details: {e}")
+        return None
+
+def resource_path(relative_path):
+    if hasattr(sys, '_MEIPASS'):
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.join(os.path.abspath("."), relative_path)
+
 class FlightNotificationService:
-    def __init__(self, lat, lon, token, preferences=None, flight_info_callback=None):
+    def __init__(self, lat, lon, token, client_id=None, client_secret=None, preferences=None, flight_info_callback=None):
         self.lat = float(lat)
         self.lon = float(lon)
         self.token = token
@@ -26,6 +179,9 @@ class FlightNotificationService:
         self.last_flights = set()
         self.flight_info_callback = flight_info_callback
         self.update_preferences(preferences or {})
+        self.client_id = client_id
+        self.client_secret = client_secret
+        self._update_bounding_box()
         
     def start_monitoring(self):
         if self.running:
@@ -51,111 +207,68 @@ class FlightNotificationService:
                 time.sleep(self.check_interval)
                 
     def _check_flights(self):
-        """Check for flights in the area using OpenSky API"""
+        """Check for flights in the area using FR24 and OpenSky for enrichment"""
         try:
-            # Calculate bounding box for the radius
-            lat_min = self.lat - (self.radius_km / 111.0)  # 1 degree ≈ 111 km
-            lat_max = self.lat + (self.radius_km / 111.0)
-            lon_min = self.lon - (self.radius_km / (111.0 * abs(self.lat)))
-            lon_max = self.lon + (self.radius_km / (111.0 * abs(self.lat)))
-            
-            # OpenSky API endpoint for state vectors
-            url = "https://opensky-network.org/api/states/all"
-            params = {
-                'lamin': lat_min,
-                'lamax': lat_max,
-                'lomin': lon_min,
-                'lomax': lon_max
-            }
-            
-            headers = {'Authorization': f'Bearer {self.token}'} if self.token else {}
-                
-            response = requests.get(url, params=params, headers=headers, timeout=10)
-            
+            # Use FR24 to get flights overhead (dynamic bounding box)
+            response = requests.get(self.fr24_url, headers=rheaders, timeout=10)
             if response.status_code == 200:
                 data = response.json()
-                if 'states' in data and data['states']:
-                    current_flights = set()
-                    new_flights = []
-                    
-                    for state in data['states']:
-                        if len(state) >= 17:  # Ensure we have enough data
-                            icao24 = state[0]
-                            callsign = state[1] if state[1] else "Unknown"
-                            origin_country = state[2] if state[2] else "Unknown"
-                            altitude = state[7] if state[7] else 0
-                            category = state[17] if len(state) > 17 else None
-                            
-                            # Filter by altitude
-                            try:
-                                alt_val = float(altitude)
-                            except:
-                                alt_val = 0
-                            if alt_val < self.min_altitude:
-                                continue
-                            
-                            # Filter by flight type
-                            if self.flight_type != "All":
-                                if not self._match_flight_type(category, self.flight_type):
-                                    continue
-                            
-                            current_flights.add(icao24)
-                            
-                            # Check if this is a new flight
-                            if icao24 not in self.last_flights:
-                                new_flights.append({
-                                    'icao24': icao24,
-                                    'callsign': callsign,
-                                    'origin_country': origin_country,
-                                    'altitude': altitude
-                                })
-                    
-                    # Send notifications for new flights
-                    for flight in new_flights:
-                        self._send_notification(flight)
-                        if self.flight_info_callback:
-                            self.flight_info_callback(flight)
-                    
-                    self.last_flights = current_flights
-                else:
-                    print("No flights found in the area")
+                current_flights = set()
+                new_flights = []
+                for flight_id, flight_info_list in data.items():
+                    if flight_id in ("version", "full_count"):
+                        continue
+                    if len(flight_info_list) > 13:
+                        icao24 = flight_info_list[0]
+                        current_flights.add(icao24)
+                        if icao24 not in self.last_flights:
+                            fr24_details = get_flight_details(flight_id)
+                            if fr24_details:
+                                enriched = parse_flight_details(
+                                    fr24_details, icao24,
+                                    client_id=self.client_id,
+                                    client_secret=self.client_secret
+                                )
+                                if enriched:
+                                    new_flights.append(enriched)
+                # Send notifications for new flights
+                for flight in new_flights:
+                    self._send_notification(flight)
+                    if self.flight_info_callback:
+                        self.flight_info_callback(flight)
+                self.last_flights = current_flights
             else:
-                print(f"API request failed with status code: {response.status_code}")
-                
-        except requests.exceptions.RequestException as e:
-            print(f"Network error: {e}")
+                print(f"FR24 API request failed with status code: {response.status_code}")
         except Exception as e:
             print(f"Error checking flights: {e}")
             
     def _send_notification(self, flight):
-        """Send a notification for a new flight"""
+        """Send a notification for a new flight using winotify with rich formatting and logo."""
         try:
-            # Create notification message
-            altitude_text = f"{flight['altitude']}m" if flight['altitude'] != "Unknown" else "Unknown altitude"
-            title = f"✈️ New Flight: {flight['callsign']}"
-            message = f"Country: {flight['origin_country']}\nAltitude: {altitude_text}\nTime: {datetime.now().strftime('%H:%M:%S')}"
-            
-            # Send desktop notification
-            try:
-                notification.notify(
-                    title=title,
-                    message=message,
-                    app_icon=None,  # e.g. 'C:\\icon_32x32.ico'
-                    timeout=10,  # seconds
-                )
-            except Exception as e:
-                print(f"Desktop notification failed: {e}")
-            
-            # Also print to console for debugging
-            print("\n" + "="*50)
-            print("🚨 FLIGHT NOTIFICATION")
-            print("="*50)
-            print(f"Flight: {flight['callsign']}")
-            print(f"Country: {flight['origin_country']}")
-            print(f"Altitude: {altitude_text}")
-            print(f"Time: {datetime.now().strftime('%H:%M:%S')}")
-            print("="*50 + "\n")
-            
+            # Use airline_icao field for logo lookup (matches script logic)
+            airline_code = flight.get('airline_icao', '').upper()
+            logo_png = resource_path(os.path.join("logos", f"{airline_code}.png"))
+            logo_ico = resource_path(os.path.join("logos", f"{airline_code}.ico"))
+            logo_path = logo_png if os.path.exists(logo_png) else (logo_ico if os.path.exists(logo_ico) else None)
+            callsign = flight.get('callsign', 'Unknown')
+
+            # Compose the message (add more fields as available)
+            message_lines = [
+                f"{flight.get('airline', 'Unknown Airline')} | {flight.get('aircraft_type', '')} - {flight.get('aircraft_model', '')}",
+                f"{flight.get('origin', '???')} → {flight.get('destination', '???')} | "
+                f"{flight.get('altitude', '???')} ft | {flight.get('speed', '???')} kt",
+                f"{datetime.now().strftime('%H:%M:%S')}"
+            ]
+            message = "\n".join(message_lines)
+
+            toast = Notification(
+                app_id="Flights Overhead",
+                title=f"✈️ Flight Overhead: {callsign}",
+                msg=message,
+                icon=logo_path
+            )
+            toast.set_audio(audio.Default, loop=False)
+            toast.show()
         except Exception as e:
             print(f"Error sending notification: {e}")
 
@@ -164,6 +277,16 @@ class FlightNotificationService:
         self.flight_type = preferences.get('flight_type', 'All')
         self.min_altitude = preferences.get('min_altitude', 0)
         self.check_interval = preferences.get('frequency', 30)
+        self._update_bounding_box()
+
+    def _update_bounding_box(self):
+        # Calculate bounding box for the radius (in km)
+        lat_min = self.lat - (self.radius_km / 111.0)
+        lat_max = self.lat + (self.radius_km / 111.0)
+        lon_min = self.lon - (self.radius_km / (111.0 * math.cos(math.radians(self.lat))))
+        lon_max = self.lon + (self.radius_km / (111.0 * math.cos(math.radians(self.lat))))
+        self.bounding_box = f"{lat_max},{lat_min},{lon_min},{lon_max}"
+        self.fr24_url = FLIGHT_SEARCH_HEAD + self.bounding_box + FLIGHT_SEARCH_TAIL
 
     def _match_flight_type(self, category, flight_type):
         # OpenSky category mapping: 0=No info, 1=Light, 2=Small, 3=Large, 4=High Vortex, 5=Heavy, 6=Highly, 7=Rotorcraft, 8=Glider, 9=Lighter-than-air, 10=Parachutist, 11=Ultralight, 12=Reserved, 13=Unmanned, 14=Space, 15=Surface, 16=Military
@@ -344,7 +467,7 @@ class App(ctk.CTk):
             self.user_lat = lat
             self.user_lon = lon
             self.notification_service = FlightNotificationService(
-                lat, lon, self.token, self.preferences,
+                lat, lon, self.token, self.client_id, self.client_secret, self.preferences,
                 flight_info_callback=self.frames["flight_info"].add_flight
             )
             self.show_preferences_page()
