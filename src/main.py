@@ -1,13 +1,182 @@
 import customtkinter as ctk
 import os
 import webbrowser
+import threading
+import time
+import requests
+import json
+from datetime import datetime, timedelta
+from plyer import notification
 from welcome_page import WelcomeFrame
 from login_page import LoginFrame
 from preferences_page import PreferencesPage
 from information_page import InformationFrame
+from flight_info_page import FlightInfoPage
 
 ctk.set_appearance_mode("Light")
 ctk.set_default_color_theme("green")
+
+class FlightNotificationService:
+    def __init__(self, lat, lon, token, preferences=None, flight_info_callback=None):
+        self.lat = float(lat)
+        self.lon = float(lon)
+        self.token = token
+        self.running = False
+        self.thread = None
+        self.last_flights = set()
+        self.flight_info_callback = flight_info_callback
+        self.update_preferences(preferences or {})
+        
+    def start_monitoring(self):
+        if self.running:
+            return
+        self.running = True
+        self.thread = threading.Thread(target=self._monitor_loop, daemon=True)
+        self.thread.start()
+        print(f"Started flight monitoring for coordinates: {self.lat}, {self.lon}")
+        
+    def stop_monitoring(self):
+        self.running = False
+        if self.thread:
+            self.thread.join(timeout=1)
+        print("Stopped flight monitoring")
+        
+    def _monitor_loop(self):
+        while self.running:
+            try:
+                self._check_flights()
+                time.sleep(self.check_interval)
+            except Exception as e:
+                print(f"Error in flight monitoring: {e}")
+                time.sleep(self.check_interval)
+                
+    def _check_flights(self):
+        """Check for flights in the area using OpenSky API"""
+        try:
+            # Calculate bounding box for the radius
+            lat_min = self.lat - (self.radius_km / 111.0)  # 1 degree ≈ 111 km
+            lat_max = self.lat + (self.radius_km / 111.0)
+            lon_min = self.lon - (self.radius_km / (111.0 * abs(self.lat)))
+            lon_max = self.lon + (self.radius_km / (111.0 * abs(self.lat)))
+            
+            # OpenSky API endpoint for state vectors
+            url = "https://opensky-network.org/api/states/all"
+            params = {
+                'lamin': lat_min,
+                'lamax': lat_max,
+                'lomin': lon_min,
+                'lomax': lon_max
+            }
+            
+            headers = {'Authorization': f'Bearer {self.token}'} if self.token else {}
+                
+            response = requests.get(url, params=params, headers=headers, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                if 'states' in data and data['states']:
+                    current_flights = set()
+                    new_flights = []
+                    
+                    for state in data['states']:
+                        if len(state) >= 17:  # Ensure we have enough data
+                            icao24 = state[0]
+                            callsign = state[1] if state[1] else "Unknown"
+                            origin_country = state[2] if state[2] else "Unknown"
+                            altitude = state[7] if state[7] else 0
+                            category = state[17] if len(state) > 17 else None
+                            
+                            # Filter by altitude
+                            try:
+                                alt_val = float(altitude)
+                            except:
+                                alt_val = 0
+                            if alt_val < self.min_altitude:
+                                continue
+                            
+                            # Filter by flight type
+                            if self.flight_type != "All":
+                                if not self._match_flight_type(category, self.flight_type):
+                                    continue
+                            
+                            current_flights.add(icao24)
+                            
+                            # Check if this is a new flight
+                            if icao24 not in self.last_flights:
+                                new_flights.append({
+                                    'icao24': icao24,
+                                    'callsign': callsign,
+                                    'origin_country': origin_country,
+                                    'altitude': altitude
+                                })
+                    
+                    # Send notifications for new flights
+                    for flight in new_flights:
+                        self._send_notification(flight)
+                        if self.flight_info_callback:
+                            self.flight_info_callback(flight)
+                    
+                    self.last_flights = current_flights
+                else:
+                    print("No flights found in the area")
+            else:
+                print(f"API request failed with status code: {response.status_code}")
+                
+        except requests.exceptions.RequestException as e:
+            print(f"Network error: {e}")
+        except Exception as e:
+            print(f"Error checking flights: {e}")
+            
+    def _send_notification(self, flight):
+        """Send a notification for a new flight"""
+        try:
+            # Create notification message
+            altitude_text = f"{flight['altitude']}m" if flight['altitude'] != "Unknown" else "Unknown altitude"
+            title = f"✈️ New Flight: {flight['callsign']}"
+            message = f"Country: {flight['origin_country']}\nAltitude: {altitude_text}\nTime: {datetime.now().strftime('%H:%M:%S')}"
+            
+            # Send desktop notification
+            try:
+                notification.notify(
+                    title=title,
+                    message=message,
+                    app_icon=None,  # e.g. 'C:\\icon_32x32.ico'
+                    timeout=10,  # seconds
+                )
+            except Exception as e:
+                print(f"Desktop notification failed: {e}")
+            
+            # Also print to console for debugging
+            print("\n" + "="*50)
+            print("🚨 FLIGHT NOTIFICATION")
+            print("="*50)
+            print(f"Flight: {flight['callsign']}")
+            print(f"Country: {flight['origin_country']}")
+            print(f"Altitude: {altitude_text}")
+            print(f"Time: {datetime.now().strftime('%H:%M:%S')}")
+            print("="*50 + "\n")
+            
+        except Exception as e:
+            print(f"Error sending notification: {e}")
+
+    def update_preferences(self, preferences):
+        self.radius_km = preferences.get('radius', 50)
+        self.flight_type = preferences.get('flight_type', 'All')
+        self.min_altitude = preferences.get('min_altitude', 0)
+        self.check_interval = preferences.get('frequency', 30)
+
+    def _match_flight_type(self, category, flight_type):
+        # OpenSky category mapping: 0=No info, 1=Light, 2=Small, 3=Large, 4=High Vortex, 5=Heavy, 6=Highly, 7=Rotorcraft, 8=Glider, 9=Lighter-than-air, 10=Parachutist, 11=Ultralight, 12=Reserved, 13=Unmanned, 14=Space, 15=Surface, 16=Military
+        if flight_type == "Commercial":
+            return category in [3, 4, 5]
+        elif flight_type == "Private":
+            return category in [1, 2, 7, 8, 9, 10, 11]
+        elif flight_type == "Military":
+            return category == 16
+        return True
+
+    def set_flight_info_callback(self, callback):
+        self.flight_info_callback = callback
 
 class LocationFrame(ctk.CTkFrame):
     def __init__(self, master, on_next_callback):
@@ -85,52 +254,110 @@ class App(ctk.CTk):
         self.grid_rowconfigure(1, weight=1)
         self.grid_columnconfigure(0, weight=1)
         self.grid_columnconfigure(1, weight=1)
+        
+        # Initialize notification service and credentials
+        self.notification_service = None
+        self.client_id = None
+        self.client_secret = None
+        self.token = None
+        self.user_lat = None
+        self.user_lon = None
+        
+        self.preferences = {
+            'radius': 50,
+            'flight_type': 'All',
+            'min_altitude': 0,
+            'frequency': 30
+        }
+        
         self.frames = {}
         self.frames["welcome"] = WelcomeFrame(self, self.show_information)
         self.frames["information"] = InformationFrame(self, self.on_signup_clicked)
         self.frames["login"] = LoginFrame(self, self.on_next)
         self.frames["location"] = LocationFrame(self, self.on_location_next)
         self.frames["preferences"] = PreferencesPage(self, self.on_preferences_save, self.on_preferences_back)
+        self.frames["flight_info"] = FlightInfoPage(
+            self,
+            on_edit_coords=self.show_location_page,
+            on_edit_prefs=self.show_preferences_page
+        )
         for frame in self.frames.values():
             frame.grid(row=0, column=0, rowspan=2, columnspan=2, sticky="nsew")
             frame.grid_remove()
         self.show_frame("welcome")
+        
     def show_frame(self, name):
         for fname, frame in self.frames.items():
             frame.grid_remove()
         self.frames[name].grid()
+        
     def show_information(self):
         self.show_frame("information")
+        
     def on_signup_clicked(self):
         webbrowser.open_new_tab("https://opensky-network.org/")
         self.show_frame("login")
+        
     def show_login(self):
         self.show_frame("login")
+        
     def show_welcome(self):
         self.show_frame("welcome")
+        
     def show_location_page(self):
         self.show_frame("location")
+        
     def show_preferences_page(self):
         self.show_frame("preferences")
-    def on_preferences_save(self):
-        print("Preferences saved!")
-        # Add navigation to next page if needed
+        
+    def show_flight_info_page(self):
+        self.frames["flight_info"].clear_flights()
+        self.show_frame("flight_info")
+        
+    def on_preferences_save(self, radius=50, flight_type="All", min_altitude=0, frequency=30):
+        print("Preferences saved!", radius, flight_type, min_altitude, frequency)
+        self.preferences = {
+            'radius': radius,
+            'flight_type': flight_type,
+            'min_altitude': min_altitude,
+            'frequency': frequency
+        }
+        if self.notification_service and self.user_lat and self.user_lon:
+            self.notification_service.update_preferences(self.preferences)
+            self.notification_service.start_monitoring()
+            print("Flight monitoring started!")
+        self.show_flight_info_page()
+        
     def on_preferences_back(self):
         self.show_location_page()
+        
     def on_next(self, client_id, client_secret, token=None):
         print(f"OpenSky Client ID: {client_id}")
-        print(f"OpenSky Client Secret: {client_secret}")
-        if token:
-            print(f"OAuth2 Access Token: {token}")
+        self.client_id = client_id
+        self.client_secret = client_secret
+        self.token = token
         self.show_location_page()
+        
     def on_location_next(self, lat=None, lon=None):
         if lat is not None and lon is not None:
             print(f"Location set: Latitude {lat}, Longitude {lon}")
+            self.user_lat = lat
+            self.user_lon = lon
+            self.notification_service = FlightNotificationService(
+                lat, lon, self.token, self.preferences,
+                flight_info_callback=self.frames["flight_info"].add_flight
+            )
             self.show_preferences_page()
         else:
-            # fallback for direct call
             self.show_preferences_page()
+            
+    def on_closing(self):
+        """Clean up notification service when app closes"""
+        if self.notification_service:
+            self.notification_service.stop_monitoring()
+        self.quit()
 
 if __name__ == "__main__":
     app = App()
+    app.protocol("WM_DELETE_WINDOW", app.on_closing)
     app.mainloop()  

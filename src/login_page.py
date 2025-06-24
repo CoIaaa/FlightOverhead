@@ -29,7 +29,7 @@ class LoginFrame(ctk.CTkFrame):
         card.grid_columnconfigure(0, weight=1)
         card.grid_columnconfigure(1, weight=1)
 
-        title = ctk.CTkLabel(card, text="Connect to OpenSky", font=("Segoe UI", 22, "bold"), text_color="#232946", anchor="w", justify="left")
+        title = ctk.CTkLabel(card, text="OpenSky Login", font=("Segoe UI", 22, "bold"), text_color="#232946", anchor="w", justify="left")
         title.grid(row=0, column=0, columnspan=2, pady=(36, 0), padx=(32,0), sticky="w")
         subtitle = ctk.CTkLabel(card, text="Please enter your details", font=("Segoe UI", 14), text_color="#3f8efc", anchor="w", justify="left")
         subtitle.grid(row=1, column=0, columnspan=2, pady=(2, 18), padx=(32,0), sticky="w")
@@ -38,31 +38,31 @@ class LoginFrame(ctk.CTkFrame):
         email_label_frame.grid(row=2, column=0, columnspan=2, pady=(0, 0), padx=(32,0), sticky="w")
         email_label = ctk.CTkLabel(email_label_frame, text="Client ID", font=("Segoe UI", 12), text_color="#232946", anchor="w", justify="left")
         email_label.pack(side="left")
-        self.username_var = ctk.StringVar()
+        self.client_id_var = ctk.StringVar()
         email_frame = ctk.CTkFrame(card, fg_color="#f5f6fa", border_color="#e0e0e0", border_width=2, corner_radius=12, width=240, height=48)
         email_frame.grid(row=3, column=0, columnspan=2, pady=(2, 0), padx=(32,32), sticky="ew")
         email_frame.grid_propagate(False)
-        user_entry = ctk.CTkEntry(email_frame, textvariable=self.username_var, width=220, height=44, font=("Segoe UI", 14), placeholder_text="E-mail", border_width=0, fg_color="transparent", text_color="#232946")
+        user_entry = ctk.CTkEntry(email_frame, textvariable=self.client_id_var, width=220, height=44, font=("Segoe UI", 14), placeholder_text="Client ID", border_width=0, fg_color="transparent", text_color="#232946")
         user_entry.pack(fill="both", expand=True, padx=8, pady=2)
-        email_error = ctk.CTkLabel(card, text="Please enter a valid email address.", font=("Segoe UI", 10), text_color="#ef4444")
+        email_error = ctk.CTkLabel(card, text="Please enter a valid client ID.", font=("Segoe UI", 10), text_color="#ef4444")
         email_error.grid(row=4, column=0, columnspan=2, pady=(2, 8), padx=(32,0), sticky="w")
         email_error.grid_remove()
 
         pass_label = ctk.CTkLabel(card, text="Client Secret", font=("Segoe UI", 12), text_color="#232946", anchor="w", justify="left")
         pass_label.grid(row=5, column=0, columnspan=2, pady=(0, 0), padx=(32,0), sticky="w")
-        self.password_var = ctk.StringVar()
+        self.client_secret_var = ctk.StringVar()
         self.show_password = False
         pass_frame_outer = ctk.CTkFrame(card, fg_color="#f5f6fa", border_color="#e0e0e0", border_width=2, corner_radius=12, width=240, height=48)
         pass_frame_outer.grid(row=6, column=0, columnspan=2, pady=(2, 0), padx=(32,32), sticky="ew")
         pass_frame_outer.grid_propagate(False)
         pass_frame_outer.grid_columnconfigure(0, weight=1)
         pass_frame_outer.grid_columnconfigure(1, weight=0)
-        self.pass_entry = ctk.CTkEntry(pass_frame_outer, textvariable=self.password_var, show="*", width=1, height=44, font=("Segoe UI", 14), placeholder_text="Password", border_width=0, fg_color="transparent", text_color="#232946")
+        self.pass_entry = ctk.CTkEntry(pass_frame_outer, textvariable=self.client_secret_var, show="*", width=1, height=44, font=("Segoe UI", 14), placeholder_text="Client Secret", border_width=0, fg_color="transparent", text_color="#232946")
         self.pass_entry.grid(row=0, column=0, sticky="ew", padx=(8,0), pady=2)
         show_btn = ctk.CTkButton(pass_frame_outer, image=self.eye_icon, text="", width=48, height=24, command=self.toggle_password, fg_color="#e0e3eb", hover_color="#cbd5e1", corner_radius=12)
         show_btn.grid(row=0, column=1, padx=(6,8), pady=2, sticky="e")
         self.show_btn = show_btn
-        pass_error = ctk.CTkLabel(card, text="Your password must contain only numbers", font=("Segoe UI", 10), text_color="#ef4444")
+        pass_error = ctk.CTkLabel(card, text="Please enter a valid client secret.", font=("Segoe UI", 10), text_color="#ef4444")
         pass_error.grid(row=7, column=0, columnspan=2, pady=(2, 8), padx=(32,0), sticky="w")
         pass_error.grid_remove()
 
@@ -93,7 +93,7 @@ class LoginFrame(ctk.CTkFrame):
             webbrowser.open_new_tab("https://opensky-network.org/")
         container = ctk.CTkFrame(card, fg_color="transparent")
         container.grid(row=10, column=0, columnspan=2, pady=(0, 18), padx=(32,32), sticky="ew")
-        no_account_label = ctk.CTkLabel(container, text="Don't have an account? ", font=("Segoe UI", 12), text_color="#555", anchor="e", justify="right", fg_color="transparent")
+        no_account_label = ctk.CTkLabel(container, text="Don't have an account? ", font=("Segoe UI", 12, "bold"), text_color="#555", anchor="e", justify="right", fg_color="transparent")
         no_account_label.pack(side="left")
         opensky_link = ctk.CTkLabel(container, text="Click to go to OpenSky", font=("Segoe UI", 12, "underline"), text_color="#3f8efc", cursor="hand2", fg_color="transparent")
         opensky_link.pack(side="left")
@@ -114,8 +114,8 @@ class LoginFrame(ctk.CTkFrame):
         webbrowser.open_new_tab("https://opensky-network.org/")
 
     def try_login(self):
-        client_id = self.username_var.get()
-        client_secret = self.password_var.get()
+        client_id = self.client_id_var.get()
+        client_secret = self.client_secret_var.get()
         if not client_id or not client_secret:
             self.login_error.configure(text="Please fill out both fields.", text_color="#e74c3c")
             return

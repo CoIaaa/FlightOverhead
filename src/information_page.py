@@ -14,15 +14,24 @@ class InformationFrame(ctk.CTkFrame):
         card.grid_rowconfigure((0,1,2,3,4), weight=0)
         card.grid_columnconfigure(0, weight=1)
 
-        info_label = ctk.CTkLabel(card, text="OpenSky Account Required", font=("Segoe UI", 24, "bold"), text_color="#232946")
+        info_label = ctk.CTkLabel(card, text="OpenSky API Client Required", font=("Segoe UI", 24, "bold"), text_color="#232946")
         info_label.grid(row=0, column=0, pady=(40, 10), padx=20, sticky="n")
-        info_text = (
-            "To use Flights Overhead, you need an OpenSky account.\n"
-            "You will need to sign up and create an API application to get your Client ID and Secret.\n\n"
-            "Click below to sign up at OpenSky and then come back to enter the details."
-        )
-        info_message = ctk.CTkLabel(card, text=info_text, font=("Segoe UI", 15), text_color="#555", wraplength=400, justify="center")
-        info_message.grid(row=1, column=0, pady=(0, 10), padx=40, sticky="n")
+        # Steps container
+        steps_frame = ctk.CTkFrame(card, fg_color="transparent")
+        steps_frame.grid(row=1, column=0, pady=(0, 10), padx=40, sticky="n")
+        step_font = ("Segoe UI", 15)
+        bold_font = ("Segoe UI", 15, "bold")
+        ctk.CTkLabel(steps_frame, text="To use Flights Overhead, you need an API Client.", font=step_font, text_color="#555", wraplength=400, justify="left").pack(anchor="w", pady=(0,8))
+        ctk.CTkLabel(steps_frame, text="1. Click below to sign up.", font=step_font, text_color="#555", wraplength=400, justify="left").pack(anchor="w", pady=0)
+        ctk.CTkLabel(steps_frame, text="2. In your OpenSky account, create an API Client.", font=step_font, text_color="#555", wraplength=400, justify="left").pack(anchor="w", pady=0)
+        step3 = ctk.CTkFrame(steps_frame, fg_color="transparent")
+        step3.pack(anchor="w", pady=0, fill="x")
+        ctk.CTkLabel(step3, text="3. Copy your API ", font=step_font, text_color="#555").pack(side="left")
+        ctk.CTkLabel(step3, text="Client ID", font=bold_font, text_color="#555").pack(side="left")
+        ctk.CTkLabel(step3, text=" and ", font=step_font, text_color="#555").pack(side="left")
+        ctk.CTkLabel(step3, text="Client Secret", font=bold_font, text_color="#555").pack(side="left")
+        ctk.CTkLabel(step3, text=" for the next step.", font=step_font, text_color="#555").pack(side="left")
+        ctk.CTkLabel(steps_frame, text="4. The app will use these credentials to securely access flight data for your area using OAuth2.", font=step_font, text_color="#555", wraplength=400, justify="left").pack(anchor="w", pady=0)
         def on_enter(e):
             signup_btn.configure(fg_color="#5fa8ff")
         def on_leave(e):
