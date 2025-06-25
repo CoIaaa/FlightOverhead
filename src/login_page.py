@@ -6,7 +6,7 @@ import requests
 import tkinter as tk
 
 class LoginFrame(ctk.CTkFrame):
-    def __init__(self, master, on_next_callback, *args, **kwargs):
+    def __init__(self, master, on_next_callback, prefill_client_id="", prefill_client_secret="", *args, **kwargs):
         super().__init__(master, *args, **kwargs)
         self.on_next_callback = on_next_callback
         self.configure(fg_color="#232946")  # Modern dark slate blue background
@@ -38,7 +38,7 @@ class LoginFrame(ctk.CTkFrame):
         email_label_frame.grid(row=2, column=0, columnspan=2, pady=(0, 0), padx=(32,0), sticky="w")
         email_label = ctk.CTkLabel(email_label_frame, text="Client ID", font=("Segoe UI", 12), text_color="#232946", anchor="w", justify="left")
         email_label.pack(side="left")
-        self.client_id_var = ctk.StringVar()
+        self.client_id_var = ctk.StringVar(value=prefill_client_id)
         email_frame = ctk.CTkFrame(card, fg_color="#f5f6fa", border_color="#e0e0e0", border_width=2, corner_radius=12, width=240, height=48)
         email_frame.grid(row=3, column=0, columnspan=2, pady=(2, 0), padx=(32,32), sticky="ew")
         email_frame.grid_propagate(False)
@@ -50,7 +50,7 @@ class LoginFrame(ctk.CTkFrame):
 
         pass_label = ctk.CTkLabel(card, text="Client Secret", font=("Segoe UI", 12), text_color="#232946", anchor="w", justify="left")
         pass_label.grid(row=5, column=0, columnspan=2, pady=(0, 0), padx=(32,0), sticky="w")
-        self.client_secret_var = ctk.StringVar()
+        self.client_secret_var = ctk.StringVar(value=prefill_client_secret)
         self.show_password = False
         pass_frame_outer = ctk.CTkFrame(card, fg_color="#f5f6fa", border_color="#e0e0e0", border_width=2, corner_radius=12, width=240, height=48)
         pass_frame_outer.grid(row=6, column=0, columnspan=2, pady=(2, 0), padx=(32,32), sticky="ew")

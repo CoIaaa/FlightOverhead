@@ -16,6 +16,10 @@ import math
 from winotify import Notification, audio
 import sys
 import platform
+try:
+    from platformdirs import user_config_dir
+except ImportError:
+    user_config_dir = None
 
 ctk.set_appearance_mode("Light")
 ctk.set_default_color_theme("green")
@@ -66,16 +70,21 @@ def get_opensky_state(icao24, client_id, client_secret, client_id2=None, client_
     if not icao24:
         return None
     url = OPENSKY_URL + icao24.lower()
+    print(f"Querying OpenSky: {url}")
     token1 = get_opensky_token(client_id, client_secret, which=1)
     headers1 = {"Authorization": f"Bearer {token1}"} if token1 else {}
     try:
         response = requests.get(url, timeout=5, headers=headers1)
+        print(f"OpenSky response status: {response.status_code}")
+        print(f"OpenSky response: {response.text}")
         if response.status_code == 429 or response.status_code == 401:
             if client_id2 and client_secret2:
                 token2 = get_opensky_token(client_id2, client_secret2, which=2)
                 headers2 = {"Authorization": f"Bearer {token2}"} if token2 else {}
                 try:
                     response2 = requests.get(url, timeout=5, headers=headers2)
+                    print(f"OpenSky response2 status: {response2.status_code}")
+                    print(f"OpenSky response2: {response2.text}")
                     if response2.status_code == 429 or response2.status_code == 401:
                         pass
                     else:
@@ -87,7 +96,8 @@ def get_opensky_state(icao24, client_id, client_secret, client_id2=None, client_
                             speed_ms2 = state2[9]
                             if altitude_m2 is not None and speed_ms2 is not None:
                                 return {"altitude_m": altitude_m2, "speed_ms": speed_ms2}
-                except Exception:
+                except Exception as e2:
+                    print(f"OpenSky client2 error: {e2}")
                     pass
         else:
             response.raise_for_status()
@@ -98,7 +108,8 @@ def get_opensky_state(icao24, client_id, client_secret, client_id2=None, client_
                 speed_ms = state[9]
                 if altitude_m is not None and speed_ms is not None:
                     return {"altitude_m": altitude_m, "speed_ms": speed_ms}
-    except Exception:
+    except Exception as e:
+        print(f"OpenSky error: {e}")
         pass
     return None
 
@@ -129,9 +140,13 @@ def parse_flight_details(flight_data, icao24=None, client_id=None, client_secret
         altitude_ft = None
         speed_kts = None
         opensky_data = get_opensky_state(icao24, client_id, client_secret, client_id2, client_secret2)
+        opensky_category = None
+        if opensky_data and 'category' in opensky_data:
+            opensky_category = opensky_data['category']
         if opensky_data:
             alt_m = opensky_data.get("altitude_m")
             spd_ms = opensky_data.get("speed_ms")
+            print(f"[DEBUG] OpenSky altitude_m: {alt_m}")
             if alt_m is not None:
                 altitude_ft = int(alt_m * 3.28084)
             if spd_ms is not None:
@@ -142,10 +157,38 @@ def parse_flight_details(flight_data, icao24=None, client_id=None, client_secret
                 for entry in reversed(trail):
                     altitude_m = entry.get("alt")
                     speed_kmh = entry.get("spd")
+                    print(f"[DEBUG] FR24 trail altitude: {altitude_m}")
                     if altitude_m not in (None, 0) and speed_kmh not in (None, 0):
-                        altitude_ft = int(altitude_m * 3.28084)
+                        if altitude_m > 1000:
+                            altitude_ft = int(altitude_m * 3.28084)
+                        else:
+                            altitude_ft = int(altitude_m)
                         speed_kts = int(speed_kmh * 0.539957)
                         break
+        # --- Heuristic flight type detection ---
+        flight_type = "Unknown"
+        # 1. OpenSky category if available
+        if opensky_category is not None:
+            try:
+                cat = int(opensky_category)
+                if cat in [3, 4, 5]:
+                    flight_type = "Commercial"
+                elif cat in [1, 2, 7, 8, 9, 10, 11]:
+                    flight_type = "Private"
+                elif cat == 16:
+                    flight_type = "Military"
+            except Exception:
+                pass
+        # 2. FR24/General heuristics if category not set
+        if flight_type == "Unknown":
+            if airline_name and flight_number:
+                flight_type = "Commercial"
+            elif airline_name and ("air force" in airline_name.lower() or "navy" in airline_name.lower() or "army" in airline_name.lower()):
+                flight_type = "Military"
+            elif flight_callsign and any(flight_callsign.startswith(prefix) for prefix in ["RCH", "MC", "QID", "BAF", "LAGR", "SHELL", "HOBO", "REACH", "PAT", "SNAKE", "MAF"]):
+                flight_type = "Military"
+            elif flight_callsign and any(flight_callsign.startswith(prefix) for prefix in ["N", "G-", "D-", "F-H", "HB-"]):
+                flight_type = "Private"
         return {
             "flight_id": flight_id_val,
             "callsign": flight_callsign,
@@ -158,7 +201,8 @@ def parse_flight_details(flight_data, icao24=None, client_id=None, client_secret
             "altitude": altitude_ft,
             "speed": speed_kts,
             "icao24": icao24,
-            "livery": livery
+            "livery": livery,
+            "flight_type": flight_type
         }
     except Exception as e:
         print(f"Error parsing flight details: {e}")
@@ -178,6 +222,7 @@ class FlightNotificationService:
         self.thread = None
         self.last_flights = set()
         self.flight_info_callback = flight_info_callback
+        self.preferences = preferences or {'alt_unit': 'ft', 'speed_unit': 'kt'}
         self.update_preferences(preferences or {})
         self.client_id = client_id
         self.client_secret = client_secret
@@ -209,7 +254,6 @@ class FlightNotificationService:
     def _check_flights(self):
         """Check for flights in the area using FR24 and OpenSky for enrichment"""
         try:
-            # Use FR24 to get flights overhead (dynamic bounding box)
             response = requests.get(self.fr24_url, headers=rheaders, timeout=10)
             if response.status_code == 200:
                 data = response.json()
@@ -230,8 +274,10 @@ class FlightNotificationService:
                                     client_secret=self.client_secret
                                 )
                                 if enriched:
-                                    new_flights.append(enriched)
-                # Send notifications for new flights
+                                    # --- Filter by user-selected flight type ---
+                                    user_type = self.preferences.get('flight_type', 'All')
+                                    if user_type == 'All' or enriched.get('flight_type', 'Unknown') == user_type:
+                                        new_flights.append(enriched)
                 for flight in new_flights:
                     self._send_notification(flight)
                     if self.flight_info_callback:
@@ -243,20 +289,40 @@ class FlightNotificationService:
             print(f"Error checking flights: {e}")
             
     def _send_notification(self, flight):
-        """Send a notification for a new flight using winotify with rich formatting and logo."""
+        print("Sending notification for", flight)
         try:
-            # Use airline_icao field for logo lookup (matches script logic)
             airline_code = flight.get('airline_icao', '').upper()
             logo_png = resource_path(os.path.join("logos", f"{airline_code}.png"))
             logo_ico = resource_path(os.path.join("logos", f"{airline_code}.ico"))
             logo_path = logo_png if os.path.exists(logo_png) else (logo_ico if os.path.exists(logo_ico) else None)
             callsign = flight.get('callsign', 'Unknown')
 
-            # Compose the message (add more fields as available)
+            altitude_val = flight.get('altitude', None)
+            speed_val = flight.get('speed', None)
+            app = None
+            try:
+                import tkinter
+                app = tkinter._default_root
+            except Exception:
+                pass
+            # Always use conversion helpers for both value and unit
+            if altitude_val is not None and hasattr(app, 'convert_altitude'):
+                if self.preferences.get('alt_unit', 'ft') == 'm':
+                    alt_disp, alt_unit = app.convert_altitude(altitude_val / 3.28084)
+                else:
+                    alt_disp, alt_unit = app.convert_altitude(altitude_val)
+            else:
+                alt_disp, alt_unit = '???', self.preferences.get('alt_unit', 'ft')
+            if speed_val is not None and hasattr(app, 'convert_speed'):
+                spd_disp, spd_unit = app.convert_speed(speed_val)
+            else:
+                spd_disp, spd_unit = '???', self.preferences.get('speed_unit', 'kt')
+            print(f"Notification speed: {spd_disp} {spd_unit} (user selected: {self.preferences.get('speed_unit', 'kt')})")
+
             message_lines = [
                 f"{flight.get('airline', 'Unknown Airline')} | {flight.get('aircraft_type', '')} - {flight.get('aircraft_model', '')}",
                 f"{flight.get('origin', '???')} → {flight.get('destination', '???')} | "
-                f"{flight.get('altitude', '???')} ft | {flight.get('speed', '???')} kt",
+                f"{alt_disp} {alt_unit} | {spd_disp} {spd_unit}",
                 f"{datetime.now().strftime('%H:%M:%S')}"
             ]
             message = "\n".join(message_lines)
@@ -378,6 +444,52 @@ class App(ctk.CTk):
         self.grid_columnconfigure(0, weight=1)
         self.grid_columnconfigure(1, weight=1)
         
+        # --- Credential persistence helpers ---
+        def get_settings_path():
+            if user_config_dir:
+                config_dir = user_config_dir("FlightPortal")
+            else:
+                config_dir = os.path.expanduser("~/.flightportal")
+            os.makedirs(config_dir, exist_ok=True)
+            return os.path.join(config_dir, "settings.json")
+        self._settings_path = get_settings_path()
+
+        def load_credentials():
+            try:
+                with open(self._settings_path, "r") as f:
+                    data = json.load(f)
+                    return data.get("client_id", ""), data.get("client_secret", "")
+            except Exception:
+                return "", ""
+        def save_credentials(client_id, client_secret):
+            try:
+                with open(self._settings_path, "w") as f:
+                    json.dump({"client_id": client_id, "client_secret": client_secret}, f)
+            except Exception as e:
+                print(f"Error saving credentials: {e}")
+        self.load_credentials = load_credentials
+        self.save_credentials = save_credentials
+
+        def load_unit_prefs():
+            try:
+                with open(self._settings_path, "r") as f:
+                    data = json.load(f)
+                    return data.get("alt_unit", "ft"), data.get("speed_unit", "kt")
+            except Exception:
+                return "ft", "kt"
+        def save_unit_prefs(alt_unit, speed_unit):
+            try:
+                with open(self._settings_path, "r") as f:
+                    data = json.load(f)
+            except Exception:
+                data = {}
+            data["alt_unit"] = alt_unit
+            data["speed_unit"] = speed_unit
+            with open(self._settings_path, "w") as f:
+                json.dump(data, f)
+        self.load_unit_prefs = load_unit_prefs
+        self.save_unit_prefs = save_unit_prefs
+
         # Initialize notification service and credentials
         self.notification_service = None
         self.client_id = None
@@ -386,17 +498,22 @@ class App(ctk.CTk):
         self.user_lat = None
         self.user_lon = None
         
+        alt_unit, speed_unit = self.load_unit_prefs()
         self.preferences = {
             'radius': 50,
             'flight_type': 'All',
             'min_altitude': 0,
-            'frequency': 30
+            'frequency': 30,
+            'alt_unit': alt_unit,
+            'speed_unit': speed_unit
         }
         
+        # --- Check for saved credentials and set initial page ---
+        saved_client_id, saved_client_secret = self.load_credentials()
         self.frames = {}
         self.frames["welcome"] = WelcomeFrame(self, self.show_information)
         self.frames["information"] = InformationFrame(self, self.on_signup_clicked)
-        self.frames["login"] = LoginFrame(self, self.on_next)
+        self.frames["login"] = LoginFrame(self, self.on_next, prefill_client_id=saved_client_id, prefill_client_secret=saved_client_secret)
         self.frames["location"] = LocationFrame(self, self.on_location_next)
         self.frames["preferences"] = PreferencesPage(self, self.on_preferences_save, self.on_preferences_back)
         self.frames["flight_info"] = FlightInfoPage(
@@ -407,7 +524,11 @@ class App(ctk.CTk):
         for frame in self.frames.values():
             frame.grid(row=0, column=0, rowspan=2, columnspan=2, sticky="nsew")
             frame.grid_remove()
-        self.show_frame("welcome")
+        # Show login if credentials exist, else welcome
+        if saved_client_id and saved_client_secret:
+            self.show_frame("login")
+        else:
+            self.show_frame("welcome")
         
     def show_frame(self, name):
         for fname, frame in self.frames.items():
@@ -434,17 +555,19 @@ class App(ctk.CTk):
         self.show_frame("preferences")
         
     def show_flight_info_page(self):
-        self.frames["flight_info"].clear_flights()
         self.show_frame("flight_info")
         
-    def on_preferences_save(self, radius=50, flight_type="All", min_altitude=0, frequency=30):
-        print("Preferences saved!", radius, flight_type, min_altitude, frequency)
+    def on_preferences_save(self, radius=50, flight_type="All", min_altitude=0, frequency=30, alt_unit="ft", speed_unit="kt"):
+        print("Preferences saved!", radius, flight_type, min_altitude, frequency, alt_unit, speed_unit)
         self.preferences = {
             'radius': radius,
             'flight_type': flight_type,
             'min_altitude': min_altitude,
-            'frequency': frequency
+            'frequency': frequency,
+            'alt_unit': alt_unit,
+            'speed_unit': speed_unit
         }
+        self.save_unit_prefs(alt_unit, speed_unit)
         if self.notification_service and self.user_lat and self.user_lon:
             self.notification_service.update_preferences(self.preferences)
             self.notification_service.start_monitoring()
@@ -459,6 +582,7 @@ class App(ctk.CTk):
         self.client_id = client_id
         self.client_secret = client_secret
         self.token = token
+        self.save_credentials(client_id, client_secret)
         self.show_location_page()
         
     def on_location_next(self, lat=None, lon=None):
@@ -479,6 +603,24 @@ class App(ctk.CTk):
         if self.notification_service:
             self.notification_service.stop_monitoring()
         self.quit()
+
+    # --- Conversion helpers ---
+    def convert_altitude(self, value_m):
+        unit = self.preferences.get('alt_unit', 'ft')
+        if unit == 'ft':
+            return int(round(value_m * 3.28084)), 'ft'
+        else:
+            return int(round(value_m)), 'm'
+    def convert_speed(self, value_kt):
+        unit = self.preferences.get('speed_unit', 'kt')
+        if unit == 'kt':
+            return int(round(value_kt)), 'kt'
+        elif unit == 'km/h':
+            return int(round(value_kt * 1.852)), 'km/h'
+        elif unit == 'mph':
+            return int(round(value_kt * 1.15078)), 'mph'
+        else:
+            return int(round(value_kt)), 'kt'
 
 if __name__ == "__main__":
     app = App()

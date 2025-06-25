@@ -40,12 +40,27 @@ class FlightInfoPage(ctk.CTkFrame):
         if self.on_edit_prefs:
             self.on_edit_prefs()
     def add_flight(self, flight):
+        print("add_flight called", flight)
         self.flight_list.configure(state="normal")
         livery = flight.get('livery', None)
+        altitude_val = flight.get('altitude', None)
+        speed_val = flight.get('speed', None)
+        alt_unit_pref = self.master.preferences.get('alt_unit', 'ft')
+        if altitude_val is not None:
+            if alt_unit_pref == 'm':
+                alt_disp, alt_unit = self.master.convert_altitude(altitude_val / 3.28084)
+            else:
+                alt_disp, alt_unit = self.master.convert_altitude(altitude_val)
+        else:
+            alt_disp, alt_unit = '???', alt_unit_pref
+        if speed_val is not None:
+            spd_disp, spd_unit = self.master.convert_speed(speed_val)
+        else:
+            spd_disp, spd_unit = '???', self.master.preferences.get('speed_unit', 'kt')
         msg = (
             f"Callsign: {flight.get('callsign', 'Unknown')}\n"
             f"Route: {flight.get('origin', '???')} → {flight.get('destination', '???')}\n"
-            f"Altitude: {flight.get('altitude', '???')} ft | Speed: {flight.get('speed', '???')} kt\n"
+            f"Altitude: {alt_disp} {alt_unit} | Speed: {spd_disp} {spd_unit}\n"
             f"Aircraft: {flight.get('aircraft_type', '???')} - {flight.get('aircraft_model', '???')}\n"
         )
         if livery:
